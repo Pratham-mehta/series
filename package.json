@@ -4,6 +4,8 @@
   "description": "Series 2.0 - Track Your Favorite Shows with Kafka Integration",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
     "producer": "node examples/send-message.js",
     "consumer": "node examples/consume-messages.js",
     "consumer:unique": "KAFKA_USE_UNIQUE_GROUP=true node examples/consume-messages-unique.js",
@@ -23,9 +25,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.22.1",
     "kafkajs": "^2.2.4",
-    "dotenv": "^16.3.1"
-  },
-  "devDependencies": {}
+    "ws": "^8.18.3"
+  }
 }
-

@@ -130,6 +130,10 @@ class KafkaConsumer {
         case 'message.received':
           this.handleMessageReceived(eventData);
           break;
+        case 'message.sent':
+          // Handle messages we sent (for confirmation)
+          this.handleMessageReceived(eventData);
+          break;
         case 'typing_indicator.received':
           this.handleTypingIndicatorReceived(eventData);
           break;
