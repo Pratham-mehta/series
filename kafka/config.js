@@ -61,7 +61,13 @@ module.exports = {
   getKafkaInstance,
   validateConfig,
   getTopicName: () => process.env.KAFKA_TOPIC_NAME,
-  getConsumerGroup: () => process.env.KAFKA_CONSUMER_GROUP,
+  getConsumerGroup: () => {
+    // Allow override with unique consumer group for testing
+    if (process.env.KAFKA_USE_UNIQUE_GROUP === 'true') {
+      return `${process.env.KAFKA_CONSUMER_GROUP}-${Date.now()}`;
+    }
+    return process.env.KAFKA_CONSUMER_GROUP;
+  },
   getClientId: () => process.env.KAFKA_CLIENT_ID || kafkaConfig.clientId,
 };
 

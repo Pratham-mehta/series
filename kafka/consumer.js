@@ -23,15 +23,21 @@ class KafkaConsumer {
       this.topicName = getTopicName();
       this.consumerGroup = getConsumerGroup();
       
+      // Create a unique client ID to avoid conflicts with other consumers
+      const uniqueClientId = `${process.env.KAFKA_CLIENT_ID || 'series-client'}-${Date.now()}`;
+      
       this.consumer = kafka.consumer({
         groupId: this.consumerGroup,
         sessionTimeout: 30000,
         heartbeatInterval: 3000,
         maxInFlightRequests: 1,
+        rebalanceTimeout: 60000, // Increased rebalance timeout
         retry: {
           initialRetryTime: 100,
           retries: 8,
         },
+        // Force protocol compatibility
+        allowAutoTopicCreation: false,
       });
 
       await this.consumer.connect();
@@ -204,6 +210,36 @@ class KafkaConsumer {
       console.log('🚀 Consumer started and listening for messages...');
     } catch (error) {
       this.isRunning = false;
+      
+      // Handle protocol incompatibility error
+      if (error.message && error.message.includes('incompatible')) {
+        console.error('\n❌ Consumer group protocol incompatibility detected.');
+        console.error('   This usually happens when other consumers are using different KafkaJS versions.');
+        console.error('\n💡 Solutions:');
+        console.error('   1. Wait a few minutes for existing consumers to disconnect');
+        console.error('   2. Use a unique consumer group ID for testing (update .env)');
+        console.error('   3. Ensure all consumers use the same KafkaJS version');
+        console.error('\n   Attempting to disconnect and retry...\n');
+        
+        // Try to disconnect and wait before retrying
+        try {
+          await this.consumer.disconnect();
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+          console.log('   Retrying connection...');
+          await this.consumer.connect();
+          await this.subscribe();
+          await this.consumer.run({
+            eachMessage: async ({ topic, partition, message }) => {
+              await this.processMessage(message);
+            },
+          });
+          console.log('✅ Consumer reconnected successfully!');
+          return;
+        } catch (retryError) {
+          console.error('❌ Retry failed:', retryError.message);
+        }
+      }
+      
       console.error('❌ Error starting consumer:', error.message);
       throw error;
     }
