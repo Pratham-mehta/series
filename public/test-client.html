@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iMessage API Test Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .status.connected {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .status.disconnected {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .controls {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .messages {
+            padding: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .message {
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+            background: #f8f9fa;
+        }
+
+        .message.received {
+            border-left-color: #28a745;
+        }
+
+        .message.sent {
+            border-left-color: #ffc107;
+        }
+
+        .message.typing {
+            border-left-color: #17a2b8;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .message-text {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .reply-section {
+            padding: 20px;
+            border-top: 1px solid #eee;
+            background: #f8f9fa;
+        }
+
+        .reply-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .chat-id-input {
+            width: 200px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💬 iMessage API Test Client</h1>
+            <div class="status disconnected" id="status">Disconnected</div>
+        </div>
+
+        <div class="controls">
+            <button class="btn-primary" onclick="startListener()">Start Listener</button>
+            <button class="btn-secondary" onclick="stopListener()">Stop Listener</button>
+            <button class="btn-secondary" onclick="getStatus()">Get Status</button>
+            <button class="btn-danger" onclick="disconnect()">Disconnect</button>
+        </div>
+
+        <div class="messages" id="messages">
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <p>No messages yet. Start the listener to begin receiving messages.</p>
+            </div>
+        </div>
+
+        <div class="reply-section">
+            <div class="reply-form">
+                <input type="text" id="chatId" class="chat-id-input" placeholder="Chat ID (optional)">
+                <input type="text" id="replyMessage" placeholder="Type your reply here..." onkeypress="handleKeyPress(event)">
+                <button class="btn-primary" onclick="sendReply()">Send Reply</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000';
+        const WS_URL = 'ws://localhost:3000';
+        let ws = null;
+        let currentChatId = null;
+
+        function updateStatus(connected) {
+            const statusEl = document.getElementById('status');
+            if (connected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status connected';
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status disconnected';
+            }
+        }
+
+        function addMessage(type, data) {
+            const messagesEl = document.getElementById('messages');
+            
+            // Remove empty state if exists
+            const emptyState = messagesEl.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+
+            let header = '';
+            let text = '';
+
+            if (type === 'received') {
+                header = `📱 From: ${data.from || 'Unknown'} | Chat: ${data.chatId || 'Unknown'}`;
+                text = data.text || '(no text)';
+                currentChatId = data.chatId;
+            } else if (type === 'sent') {
+                header = `📤 Sent to Chat: ${data.chatId || 'Unknown'}`;
+                text = data.text || '(no text)';
+            } else if (type === 'typing') {
+                header = `⌨️ Typing Indicator`;
+                text = `Chat ${data.chatId || 'Unknown'}: ${data.display ? 'Someone is typing...' : 'Typing stopped'}`;
+            } else {
+                header = type;
+                text = JSON.stringify(data, null, 2);
+            }
+
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    <span>${header}</span>
+                    <span>${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="message-text">${text}</div>
+            `;
+
+            messagesEl.insertBefore(messageEl, messagesEl.firstChild);
+            messagesEl.scrollTop = 0;
+        }
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateStatus(true);
+                addMessage('system', { text: 'Connected to iMessage listener' });
+            };
+
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+
+                if (message.type === 'connected') {
+                    addMessage('system', { text: 'Connected to server' });
+                } else if (message.type === 'message.received') {
+                    addMessage('received', {
+                        from: message.event.data.from,
+                        text: message.event.data.text,
+                        chatId: message.event.data.chatId,
+                    });
+                    // Auto-fill chat ID
+                    if (!document.getElementById('chatId').value) {
+                        document.getElementById('chatId').value = message.event.data.chatId;
+                    }
+                } else if (message.type === 'message.sent') {
+                    addMessage('sent', {
+                        text: message.event.data.text,
+                        chatId: message.event.data.chatId,
+                    });
+                } else if (message.type === 'typing_indicator.received' || message.type === 'typing_indicator.removed') {
+                    addMessage('typing', {
+                        chatId: message.event.data.chatId,
+                        display: message.event.data.display,
+                    });
+                } else if (message.type === 'reply_sent') {
+                    addMessage('sent', {
+                        text: message.data.text,
+                        chatId: message.data.chatId,
+                    });
+                } else if (message.type === 'error') {
+                    alert(`Error: ${message.message}`);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus(false);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateStatus(false);
+                addMessage('system', { text: 'Disconnected from server' });
+            };
+        }
+
+        async function startListener() {
+            try {
+                const response = await fetch(`${API_URL}/api/listener/start`, {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addMessage('system', { text: 'Listener started successfully' });
+                    connectWebSocket();
+                } else {
+                    alert(data.error || 'Failed to start listener');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function stopListener() {
+            try {
+                const response = await fetch(`${API_URL}/api/listener/stop`, {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addMessage('system', { text: 'Listener stopped' });
+                } else {
+                    alert(data.error || 'Failed to stop listener');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function getStatus() {
+            try {
+                const response = await fetch(`${API_URL}/api/listener/status`);
+                const data = await response.json();
+                alert(`Status:\nListening: ${data.listening}\nConnected: ${data.connected}\nClients: ${data.clients}`);
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            updateStatus(false);
+        }
+
+        function sendReply() {
+            const chatId = document.getElementById('chatId').value || currentChatId;
+            const message = document.getElementById('replyMessage').value;
+
+            if (!chatId) {
+                alert('Please enter a Chat ID or wait for a message');
+                return;
+            }
+
+            if (!message.trim()) {
+                alert('Please enter a message');
+                return;
+            }
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // Send via WebSocket
+                ws.send(JSON.stringify({
+                    type: 'send_reply',
+                    chatId: chatId,
+                    message: message,
+                }));
+                document.getElementById('replyMessage').value = '';
+            } else {
+                // Fallback to REST API
+                fetch(`${API_URL}/api/reply`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chatId: chatId,
+                        message: message,
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        addMessage('sent', {
+                            text: data.data.text,
+                            chatId: data.data.chatId,
+                        });
+                        document.getElementById('replyMessage').value = '';
+                    } else {
+                        alert(`Error: ${data.error || data.message}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error.message}`);
+                });
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendReply();
+            }
+        }
+
+        // Auto-connect on load
+        window.addEventListener('load', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
+
