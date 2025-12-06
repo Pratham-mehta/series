@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const cors = require('cors');
 const KafkaConsumer = require('./kafka/consumer');
 const SeriesAPIClient = require('./api/client');
+const DynamoDBHelper = require('./db/dynamodb');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +33,9 @@ try {
   console.warn('⚠️  API client initialization failed:', error.message);
   console.warn('   Some endpoints may not work until API credentials are configured.');
 }
+
+// Initialize DynamoDB helper
+const db = new DynamoDBHelper();
 
 /**
  * Broadcast message to all connected WebSocket clients
@@ -352,6 +356,160 @@ app.get('/api/chats', async (req, res) => {
       error: 'Failed to fetch chats',
       message: error.message,
       details: error.data,
+    });
+  }
+});
+
+// ==================== Profile Endpoints ====================
+
+/**
+ * Save user profile
+ * POST /api/profiles
+ * Body: { phoneNumber: string, profile: object }
+ */
+app.post('/api/profiles', async (req, res) => {
+  try {
+    const { phoneNumber, profile } = req.body;
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        error: 'phoneNumber is required',
+      });
+    }
+
+    if (!profile) {
+      return res.status(400).json({
+        error: 'profile data is required',
+      });
+    }
+
+    // Save profile to DynamoDB
+    const savedProfile = await db.saveProfile(phoneNumber, { profile });
+
+    res.json({
+      success: true,
+      message: 'Profile saved successfully',
+      data: savedProfile,
+    });
+  } catch (error) {
+    console.error('Error saving profile:', error);
+    res.status(500).json({
+      error: 'Failed to save profile',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Get user profile by phone number
+ * GET /api/profiles/:phoneNumber
+ */
+app.get('/api/profiles/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+
+    const profile = await db.getProfile(phoneNumber);
+
+    if (!profile) {
+      return res.status(404).json({
+        error: 'Profile not found',
+        phoneNumber,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: profile,
+    });
+  } catch (error) {
+    console.error('Error getting profile:', error);
+    res.status(500).json({
+      error: 'Failed to get profile',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Get all profiles
+ * GET /api/profiles
+ */
+app.get('/api/profiles', async (req, res) => {
+  try {
+    const profiles = await db.getAllProfiles();
+
+    res.json({
+      success: true,
+      count: profiles.length,
+      data: profiles,
+    });
+  } catch (error) {
+    console.error('Error getting profiles:', error);
+    res.status(500).json({
+      error: 'Failed to get profiles',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Delete user profile
+ * DELETE /api/profiles/:phoneNumber
+ */
+app.delete('/api/profiles/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+
+    await db.deleteProfile(phoneNumber);
+
+    res.json({
+      success: true,
+      message: 'Profile deleted successfully',
+      phoneNumber,
+    });
+  } catch (error) {
+    console.error('Error deleting profile:', error);
+    res.status(500).json({
+      error: 'Failed to delete profile',
+      message: error.message,
+    });
+  }
+});
+
+// ==================== Matching Endpoints ====================
+
+/**
+ * Get compatible matches for a user
+ * GET /api/matches/:phoneNumber
+ * Query params: limit (default: 10), minScore (default: 30)
+ */
+app.get('/api/matches/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const minScore = parseInt(req.query.minScore) || 30;
+
+    const matches = await db.findMatches(phoneNumber, limit, minScore);
+
+    res.json({
+      success: true,
+      phoneNumber,
+      count: matches.length,
+      matches,
+    });
+  } catch (error) {
+    console.error('Error finding matches:', error);
+
+    if (error.message === 'User profile not found') {
+      return res.status(404).json({
+        error: 'User profile not found',
+        phoneNumber: req.params.phoneNumber,
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to find matches',
+      message: error.message,
     });
   }
 });

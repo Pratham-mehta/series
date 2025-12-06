@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Series 2.0 - Track Your Favorite Shows</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">Series</div>
+            <div class="nav-links">
+                <a href="#" class="nav-button">Get Started</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="hero-wrapper">
+                <div class="hero-content">
+                    <h1 class="hero-title">
+                        <span class="gradient-text">Series 2.0</span>
+                    </h1>
+                    <p class="hero-subtitle">The most beautiful way to track your favorite shows and discover what's next.</p>
+                    <div class="hero-buttons">
+                        <button class="btn-primary">Get Started</button>
+                        <button class="btn-secondary">Watch Demo</button>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="device-mockup">
+                        <div class="screen">
+                            <div class="screen-content">
+                                <div class="show-card">
+                                    <div class="show-poster"></div>
+                                    <div class="show-info">
+                                        <h3>Stranger Things</h3>
+                                        <p>Season 4, Episode 7</p>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Search Modal -->
+    <div class="modal-overlay" id="searchModal">
+        <div class="modal-container">
+            <div class="modal-content">
+                <button class="modal-close" id="closeModal" aria-label="Close modal">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                
+                <div class="modal-header">
+                    <div class="search-icon-wrapper">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+                            <path d="m20 20-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <h2 class="modal-title">Search Profile</h2>
+                    <p class="modal-subtitle">Enter a name to search</p>
+                </div>
+
+                <div class="modal-body">
+                    <div class="input-group">
+                        <label for="searchName">Name</label>
+                        <div class="input-wrapper">
+                            <input 
+                                type="text" 
+                                id="searchName" 
+                                class="search-input" 
+                                placeholder="Enter name to search"
+                                autocomplete="off"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="profile-not-found-option">
+                        <button class="btn-profile-not-found" id="showManualUrlBtnPersistent">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="profile-not-found-icon">
+                                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                            Profile not found? Paste your LinkedIn URL
+                        </button>
+                    </div>
+
+                    <div class="result-container" id="resultContainer" style="display: none;">
+                        <div class="result-card" id="resultCard">
+                            <div class="result-loading" id="resultLoading">
+                                <div class="loading-spinner"></div>
+                                <p>Searching...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manual LinkedIn URL Input -->
+                    <div class="manual-url-container" id="manualUrlContainer" style="display: none;">
+                        <div class="manual-url-content">
+                            <p class="manual-url-text">Couldn't find your profile? Add your LinkedIn URL manually.</p>
+                            <div class="input-group">
+                                <label for="linkedinUrl">LinkedIn URL</label>
+                                <div class="input-wrapper">
+                                    <input 
+                                        type="url" 
+                                        id="linkedinUrl" 
+                                        class="search-input" 
+                                        placeholder="https://linkedin.com/in/yourname"
+                                        autocomplete="off"
+                                    />
+                                </div>
+                            </div>
+                            <div class="manual-url-buttons">
+                                <button class="btn-secondary" id="cancelUrlBtn">Cancel</button>
+                                <button class="btn-primary" id="searchUrlBtn">Search</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Profile Detail View -->
+                <div class="profile-detail-container" id="profileDetailContainer" style="display: none;">
+                    <div class="profile-detail-content">
+                        <button class="profile-close" id="closeProfileDetail" aria-label="Close profile">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                        
+                        <div class="profile-detail-header">
+                            <div class="profile-detail-thumbnail" id="profileDetailThumbnail">
+                                <div class="thumbnail-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <h2 class="profile-detail-title" id="profileDetailTitle">Profile Name</h2>
+                            <a href="#" target="_blank" class="profile-detail-link" id="profileDetailLink">View Profile →</a>
+                        </div>
+
+                        <div class="profile-detail-body">
+                            <div class="age-verification">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="ageVerification" class="age-checkbox">
+                                    <span class="checkbox-custom"></span>
+                                    <span class="checkbox-text">I confirm that I am 18 years or older</span>
+                                </label>
+                            </div>
+
+                            <button class="btn-imessage" id="openIMessageBtn" disabled>
+                                <svg class="imessage-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M7 9H17M7 13H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                Open iMessage
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn-secondary" id="cancelBtn">Cancel</button>
+                    <button class="btn-primary" id="searchBtn">Search</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
+

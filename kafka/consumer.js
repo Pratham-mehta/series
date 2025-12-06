@@ -1,4 +1,7 @@
 const { getKafkaInstance, getTopicName, getConsumerGroup, validateConfig } = require('./config');
+const axios = require('axios');
+const DynamoDBHelper = require('../db/dynamodb');
+const SeriesAPIClient = require('../api/client');
 
 /**
  * Kafka Consumer for receiving messages from the topic
@@ -11,6 +14,16 @@ class KafkaConsumer {
     this.consumerGroup = null;
     this.isRunning = false;
     this.messageHandlers = new Map();
+    this.db = new DynamoDBHelper();
+    this.empathyLambdaUrl = process.env.EMPATHY_LAMBDA_URL;
+
+    // Initialize API client for sending replies
+    try {
+      this.apiClient = new SeriesAPIClient();
+    } catch (error) {
+      console.warn('⚠️  API client not initialized:', error.message);
+      this.apiClient = null;
+    }
   }
 
   /**
@@ -149,10 +162,182 @@ class KafkaConsumer {
   }
 
   /**
+   * Call Empathy Lambda to analyze message sentiment
+   * @param {String} messageText - The message text
+   * @returns {Promise<Object>} Sentiment analysis result
+   */
+  async analyzeMessageSentiment(messageText) {
+    try {
+      if (!this.empathyLambdaUrl) {
+        console.log('⚠️  Empathy Lambda URL not configured, skipping sentiment analysis');
+        return null;
+      }
+
+      console.log('🤖 Calling Empathy Lambda...');
+      const response = await axios.post(this.empathyLambdaUrl, {
+        message: messageText
+      }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000
+      });
+
+      // Parse the response body (Lambda returns JSON string in body)
+      const result = typeof response.data === 'string'
+        ? JSON.parse(response.data)
+        : response.data;
+
+      console.log('✅ Sentiment analysis:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Error calling Empathy Lambda:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Extract topics/keywords from message text
+   * @param {String} messageText - The message text
+   * @returns {Array<String>} List of topics
+   */
+  extractTopics(messageText) {
+    if (!messageText) return [];
+
+    // Simple keyword extraction (you can make this more sophisticated)
+    const commonWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'want', 'hey', 'looking', 'great', 'here']);
+
+    // Convert to lowercase and split into words
+    const words = messageText.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .split(/\s+/)
+      .filter(word => word.length > 3) // Only words longer than 3 chars
+      .filter(word => !commonWords.has(word)); // Remove common words
+
+    // Return unique topics, limit to 5
+    return [...new Set(words)].slice(0, 5);
+  }
+
+  /**
+   * Update user's message insights in DynamoDB
+   * @param {String} phoneNumber - User's phone number
+   * @param {String} messageText - The message text
+   * @param {Object} sentimentData - Sentiment analysis from Lambda
+   */
+  async updateMessageInsights(phoneNumber, messageText, sentimentData) {
+    try {
+      // Extract topics from message
+      const topics = this.extractTopics(messageText);
+
+      // Get existing profile or create new insights
+      const profile = await this.db.getProfile(phoneNumber);
+
+      if (!profile) {
+        console.log(`⚠️  No profile found for ${phoneNumber}, skipping insights update`);
+        return;
+      }
+
+      // Merge new topics with existing ones (keep last 10 unique topics)
+      const existingTopics = profile.messageInsights?.recentTopics || [];
+      const allTopics = [...new Set([...topics, ...existingTopics])].slice(0, 10);
+
+      // Build updated insights
+      const insights = {
+        recentTopics: allTopics,
+        sentiment: sentimentData?.sentiment || 'Neutral',
+        vibe: sentimentData?.vibe_color || null,
+        lastMessage: messageText,
+        lastMessageAt: new Date().toISOString()
+      };
+
+      // Update DynamoDB
+      await this.db.updateMessageInsights(phoneNumber, insights);
+      console.log(`✅ Updated message insights for ${phoneNumber}`);
+      console.log(`   Topics: ${allTopics.join(', ')}`);
+      console.log(`   Sentiment: ${insights.sentiment}`);
+    } catch (error) {
+      console.error('❌ Error updating message insights:', error.message);
+    }
+  }
+
+  /**
+   * Send an auto-reply to a chat
+   * @param {String} chatId - Chat ID to reply to
+   * @param {String} replyText - Text to send
+   */
+  async sendReply(chatId, replyText) {
+    if (!this.apiClient) {
+      console.log('⚠️  Cannot send reply - API client not initialized');
+      return null;
+    }
+
+    try {
+      console.log(`\n📤 Sending auto-reply to chat ${chatId}...`);
+
+      const response = await this.apiClient.createChatMessage(chatId, {
+        message: {
+          text: replyText,
+        },
+      });
+
+      console.log('✅ Auto-reply sent successfully!');
+      console.log(`   Message ID: ${response.data.id}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error sending auto-reply:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Generate an auto-reply based on message content and sentiment
+   * @param {String} messageText - The received message text
+   * @param {Object} sentimentData - Sentiment analysis data
+   * @param {String} fromPhone - Sender's phone number
+   * @returns {String} Auto-reply text
+   */
+  async generateAutoReply(messageText, sentimentData, fromPhone) {
+    // Get user profile to check for matches
+    const profile = await this.db.getProfile(fromPhone);
+
+    if (!profile || !profile.messageInsights) {
+      // Simple acknowledgment for unknown users
+      return `Thanks for your message! I received: "${messageText}"`;
+    }
+
+    // Use Lambda's suggestion if available
+    if (sentimentData && sentimentData.suggestion) {
+      // If Lambda provided a specific suggestion/vibe, use it to craft response
+      const suggestion = sentimentData.suggestion;
+
+      if (typeof suggestion === 'string') {
+        // Lambda gave us a direct suggestion
+        return `Thanks for reaching out! ${suggestion}`;
+      } else if (suggestion.vibe) {
+        // Lambda provided vibe information
+        return `I appreciate your ${suggestion.vibe.toLowerCase()} message! Let me help you with that.`;
+      }
+    }
+
+    // Use sentiment-based responses
+    const sentiment = sentimentData?.sentiment || 'Neutral';
+    const vibe = sentimentData?.vibe;
+
+    if (sentiment === 'Happy' || vibe === 'Celebratory' || vibe === 'Cheerful') {
+      return `Great to hear from you! Your positive energy is contagious! 😊`;
+    } else if (sentiment === 'Sad') {
+      return `I'm here for you. Thanks for reaching out. 💙`;
+    } else if (vibe && vibe.includes('Playful')) {
+      return `Hey! I love your energy! Let me help you find someone who shares your interests! 😊`;
+    }
+
+    // Default response
+    return `Thanks for your message! I'm processing it and will help you connect with the right people.`;
+  }
+
+  /**
    * Handle message.received event
    * @param {Object} eventData - Event data
    */
-  handleMessageReceived(eventData) {
+  async handleMessageReceived(eventData) {
     const { data } = eventData;
     console.log(`\n💬 New Message Received:`);
     console.log(`   From: ${data.from_phone || 'Unknown'}`);
@@ -161,6 +346,30 @@ class KafkaConsumer {
     console.log(`   Read: ${data.is_read ? 'Yes' : 'No'}`);
     if (data.attachments && data.attachments.length > 0) {
       console.log(`   Attachments: ${data.attachments.length}`);
+    }
+
+    // IMPORTANT: Skip messages from our own number to avoid infinite loops
+    const myNumber = process.env.SENDER_NUMBER || '+16463458837';
+    if (data.from_phone === myNumber) {
+      console.log('   ⏭️  Skipping - this is our own message');
+      return;
+    }
+
+    // Process message for insights (Phase 3)
+    if (data.text && data.from_phone) {
+      console.log('\n🔄 Processing message for insights...');
+
+      // 1. Call Empathy Lambda for sentiment analysis
+      const sentimentData = await this.analyzeMessageSentiment(data.text);
+
+      // 2. Update DynamoDB with message insights
+      await this.updateMessageInsights(data.from_phone, data.text, sentimentData);
+
+      // 3. Generate and send auto-reply
+      if (data.chat_id && this.apiClient) {
+        const replyText = await this.generateAutoReply(data.text, sentimentData, data.from_phone);
+        await this.sendReply(data.chat_id, replyText);
+      }
     }
   }
 
