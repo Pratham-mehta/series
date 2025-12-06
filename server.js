@@ -24,8 +24,14 @@ let activeConsumer = null;
 let isListening = false;
 const connectedClients = new Set();
 
-// Initialize API client
-const apiClient = new SeriesAPIClient();
+// Initialize API client (with error handling)
+let apiClient = null;
+try {
+  apiClient = new SeriesAPIClient();
+} catch (error) {
+  console.warn('⚠️  API client initialization failed:', error.message);
+  console.warn('   Some endpoints may not work until API credentials are configured.');
+}
 
 /**
  * Broadcast message to all connected WebSocket clients
@@ -47,94 +53,99 @@ function setupConsumer() {
     return activeConsumer;
   }
 
-  // Use unique consumer group to avoid conflicts
-  process.env.KAFKA_USE_UNIQUE_GROUP = 'true';
+  try {
+    // Use unique consumer group to avoid conflicts
+    process.env.KAFKA_USE_UNIQUE_GROUP = 'true';
 
-  const consumer = new KafkaConsumer();
+    const consumer = new KafkaConsumer();
 
-  // Handle incoming messages
-  consumer.onEvent('message.received', async (eventData) => {
-    const { data } = eventData;
-    
-    const messageData = {
-      type: 'message.received',
-      event: {
-        id: eventData.event_id,
-        createdAt: eventData.created_at,
-        data: {
-          from: data.from_phone,
-          text: data.text,
-          chatId: data.chat_id,
-          sentAt: data.sent_at,
-          service: data.service,
-          isRead: data.is_read,
-          attachments: data.attachments || [],
-          participants: data.chat_handles || [],
+    // Handle incoming messages
+    consumer.onEvent('message.received', async (eventData) => {
+      const { data } = eventData;
+      
+      const messageData = {
+        type: 'message.received',
+        event: {
+          id: eventData.event_id,
+          createdAt: eventData.created_at,
+          data: {
+            from: data.from_phone,
+            text: data.text,
+            chatId: data.chat_id,
+            sentAt: data.sent_at,
+            service: data.service,
+            isRead: data.is_read,
+            attachments: data.attachments || [],
+            participants: data.chat_handles || [],
+          },
         },
-      },
-    };
+      };
 
-    // Broadcast to all connected clients
-    broadcast(messageData);
-  });
-
-  // Handle typing indicators
-  consumer.onEvent('typing_indicator.received', async (eventData) => {
-    const { data } = eventData;
-    
-    broadcast({
-      type: 'typing_indicator.received',
-      event: {
-        id: eventData.event_id,
-        createdAt: eventData.created_at,
-        data: {
-          chatId: data.chat_id,
-          display: data.display,
-          timestamp: data.timestamp,
-        },
-      },
+      // Broadcast to all connected clients
+      broadcast(messageData);
     });
-  });
 
-  consumer.onEvent('typing_indicator.removed', async (eventData) => {
-    const { data } = eventData;
-    
-    broadcast({
-      type: 'typing_indicator.removed',
-      event: {
-        id: eventData.event_id,
-        createdAt: eventData.created_at,
-        data: {
-          chatId: data.chat_id,
-          display: data.display,
-          timestamp: data.timestamp,
+    // Handle typing indicators
+    consumer.onEvent('typing_indicator.received', async (eventData) => {
+      const { data } = eventData;
+      
+      broadcast({
+        type: 'typing_indicator.received',
+        event: {
+          id: eventData.event_id,
+          createdAt: eventData.created_at,
+          data: {
+            chatId: data.chat_id,
+            display: data.display,
+            timestamp: data.timestamp,
+          },
         },
-      },
+      });
     });
-  });
 
-  // Handle message.sent events (messages we sent)
-  consumer.onEvent('message.sent', async (eventData) => {
-    const { data } = eventData;
-    
-    broadcast({
-      type: 'message.sent',
-      event: {
-        id: eventData.event_id,
-        createdAt: eventData.created_at,
-        data: {
-          from: data.from_phone,
-          text: data.text,
-          chatId: data.chat_id,
-          sentAt: data.sent_at,
-          messageId: data.id,
+    consumer.onEvent('typing_indicator.removed', async (eventData) => {
+      const { data } = eventData;
+      
+      broadcast({
+        type: 'typing_indicator.removed',
+        event: {
+          id: eventData.event_id,
+          createdAt: eventData.created_at,
+          data: {
+            chatId: data.chat_id,
+            display: data.display,
+            timestamp: data.timestamp,
+          },
         },
-      },
+      });
     });
-  });
 
-  activeConsumer = consumer;
-  return consumer;
+    // Handle message.sent events (messages we sent)
+    consumer.onEvent('message.sent', async (eventData) => {
+      const { data } = eventData;
+      
+      broadcast({
+        type: 'message.sent',
+        event: {
+          id: eventData.event_id,
+          createdAt: eventData.created_at,
+          data: {
+            from: data.from_phone,
+            text: data.text,
+            chatId: data.chat_id,
+            sentAt: data.sent_at,
+            messageId: data.id,
+          },
+        },
+      });
+    });
+
+    activeConsumer = consumer;
+    return consumer;
+  } catch (error) {
+    console.error('Error setting up consumer:', error);
+    throw error;
+  }
 }
 
 // ==================== REST API Endpoints ====================
@@ -234,6 +245,13 @@ app.get('/api/listener/status', (req, res) => {
  */
 app.post('/api/reply', async (req, res) => {
   try {
+    if (!apiClient) {
+      return res.status(503).json({
+        error: 'API client not initialized',
+        message: 'Please configure SERIES_API_KEY and SERIES_API_BASE_URL environment variables',
+      });
+    }
+
     const { chatId, message } = req.body;
 
     if (!chatId) {
@@ -280,6 +298,13 @@ app.post('/api/reply', async (req, res) => {
  */
 app.get('/api/chats/:chatId/messages', async (req, res) => {
   try {
+    if (!apiClient) {
+      return res.status(503).json({
+        error: 'API client not initialized',
+        message: 'Please configure SERIES_API_KEY and SERIES_API_BASE_URL environment variables',
+      });
+    }
+
     const { chatId } = req.params;
     const response = await apiClient.listChatMessages(chatId);
 
@@ -303,6 +328,13 @@ app.get('/api/chats/:chatId/messages', async (req, res) => {
  */
 app.get('/api/chats', async (req, res) => {
   try {
+    if (!apiClient) {
+      return res.status(503).json({
+        error: 'API client not initialized',
+        message: 'Please configure SERIES_API_KEY and SERIES_API_BASE_URL environment variables',
+      });
+    }
+
     const { phone_number, page, per_page } = req.query;
     const response = await apiClient.listChats({
       phoneNumber: phone_number,
@@ -350,6 +382,14 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({
             type: 'error',
             message: 'chatId and message are required',
+          }));
+          return;
+        }
+
+        if (!apiClient) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'API client not initialized. Please configure API credentials.',
           }));
           return;
         }
@@ -425,11 +465,19 @@ process.on('SIGINT', async () => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🚀 iMessage API Server running on port ${PORT}`);
-  console.log(`📡 WebSocket endpoint: ws://localhost:${PORT}`);
-  console.log(`🌐 REST API: http://localhost:${PORT}/api`);
-  console.log(`\n💡 Start the listener: POST http://localhost:${PORT}/api/listener/start`);
+const HOST = process.env.HOST || '0.0.0.0'; // Bind to all interfaces for Cloud Run
+
+server.listen(PORT, HOST, () => {
+  console.log(`🚀 iMessage API Server running on ${HOST}:${PORT}`);
+  console.log(`📡 WebSocket endpoint: ws://${HOST}:${PORT}`);
+  console.log(`🌐 REST API: http://${HOST}:${PORT}/api`);
+  console.log(`\n💡 Start the listener: POST http://${HOST}:${PORT}/api/listener/start`);
+  
+  // Log environment info
+  console.log(`\n📋 Environment:`);
+  console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   PORT: ${PORT}`);
+  console.log(`   HOST: ${HOST}`);
 });
 
 module.exports = app;
