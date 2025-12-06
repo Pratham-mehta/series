@@ -1,0 +1,27 @@
+{
+  "name": "series-2.0",
+  "version": "2.0.0",
+  "description": "Series 2.0 - Track Your Favorite Shows with Kafka Integration",
+  "main": "index.js",
+  "scripts": {
+    "producer": "node examples/send-message.js",
+    "consumer": "node examples/consume-messages.js",
+    "api-examples": "node examples/api-examples.js",
+    "request-chats": "node examples/request-chats-via-kafka.js",
+    "kafka-bridge": "node examples/kafka-to-api-bridge.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "series",
+    "kafka",
+    "streaming"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {}
+}
+
